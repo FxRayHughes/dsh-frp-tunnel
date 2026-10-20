@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FRP Tunnel",
+    "description": "Runs frpc to expose this Web GUI through your own frps server. The access link with the launch token is written to ~/.dsh/frp-tunnel/access-url.txt."
+  }
+}

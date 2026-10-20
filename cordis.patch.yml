@@ -1,0 +1,11 @@
+# Registers the FRP tunnel Host plugin.
+#
+# Shipped disabled: the row is inert until you fill in the real frps values.
+# Keep your real credentials in the *profile's* cordis.patch.yml as an override
+# of id `frp-tunnel` — `config` is replaced wholesale, so restate every field
+# you rely on. Never commit the token into this file.
+- insert:
+    - id: frp-tunnel
+      name: '@local/dsh-frp-tunnel'
+      config:
+        enabled: false

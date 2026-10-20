@@ -1,0 +1,268 @@
+/*
+ * Phone layout for the DSH web shell, injected by the frp-tunnel relay.
+ *
+ * Everything is scoped under html.dsh-m, which mobile.js sets only on narrow or
+ * touch-first screens, so desktop browsers through the tunnel are unaffected.
+ *
+ * DSH styles are CSS modules (`_<hash>_<name>`), so guessing at names is
+ * fragile — `[class*="_frame"]` also hits `icaHSq_frame`. Instead mobile.js tags
+ * the shell elements with the marker classes used here (dsh-m-frame,
+ * dsh-m-center, dsh-m-side, dsh-m-header), and everything else is addressed by
+ * DSH's own data attributes.
+ */
+
+html.dsh-m {
+  --dsh-m-top: env(safe-area-inset-top, 0px);
+  --dsh-m-bottom: env(safe-area-inset-bottom, 0px);
+  --dsh-m-menu: 44px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html.dsh-m,
+html.dsh-m body {
+  height: 100%;
+  overflow: hidden;
+  /* No rubber-band / pull-to-refresh fighting the inner scrollers. */
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html.dsh-m #root {
+  height: 100dvh;
+  box-sizing: border-box;
+  padding-top: var(--dsh-m-top);
+  padding-bottom: var(--dsh-m-bottom);
+}
+
+/* ---------- Frame: the main column always gets the full width ---------- */
+
+html.dsh-m .dsh-m-frame {
+  /* Beats the inline `grid-template-columns: 56px 1fr 0` React writes. */
+  grid-template-columns: 0 minmax(0, 1fr) 0 !important;
+}
+/* The drawer is position:fixed and leaves the grid flow; pin the other columns
+   so auto-placement cannot slide the chat into the zero-width first track. */
+html.dsh-m .dsh-m-center {
+  grid-column: 2;
+  grid-row: 1;
+}
+html.dsh-m .dsh-m-frame > .dsh-m-center + * {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+/* Sidebar becomes an off-canvas drawer instead of a squeezing column. */
+html.dsh-m .dsh-m-side {
+  position: fixed !important;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  width: min(86vw, 320px) !important;
+  min-width: 0;
+  padding-top: var(--dsh-m-top);
+  padding-bottom: var(--dsh-m-bottom);
+  box-sizing: border-box;
+  background: var(--dsw-specific-sidebar-fill, #f7f8fa) !important;
+  box-shadow: 0 0 32px rgba(0, 0, 0, 0.18);
+  transform: translateX(-105%);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+html.dsh-m.dsh-m-side-open .dsh-m-side {
+  transform: none;
+}
+/* The collapsed rail would otherwise peek in during the slide. */
+html.dsh-m .dsh-m-frame[data-sidebar-collapsed] .dsh-m-side {
+  visibility: hidden;
+}
+html.dsh-m.dsh-m-side-open .dsh-m-frame[data-sidebar-collapsed] .dsh-m-side {
+  visibility: visible;
+}
+html.dsh-m.dsh-m-instant .dsh-m-side {
+  transition: none !important;
+}
+
+.dsh-m-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(0, 0, 0, 0.32);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s;
+}
+html.dsh-m.dsh-m-side-open .dsh-m-backdrop {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Floating menu button replacing the hidden rail. */
+.dsh-m-menu {
+  display: none;
+}
+html.dsh-m .dsh-m-menu {
+  position: fixed;
+  top: calc(var(--dsh-m-top) + 4px);
+  left: 6px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: var(--dsh-m-menu);
+  height: var(--dsh-m-menu);
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary, #1f2329);
+  cursor: pointer;
+}
+html.dsh-m .dsh-m-menu:active {
+  background: var(--dsw-alias-fill-l2, rgba(0, 0, 0, 0.06));
+}
+html.dsh-m .dsh-m-menu svg {
+  width: 22px;
+  height: 22px;
+}
+html.dsh-m.dsh-m-side-open .dsh-m-menu,
+html.dsh-m.dsh-m-right-open .dsh-m-menu {
+  visibility: hidden;
+}
+
+/* ---------- Conversation header ---------- */
+
+html.dsh-m .dsh-m-header {
+  min-height: 0;
+  padding: 8px 8px 0 calc(var(--dsh-m-menu) + 10px);
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The title cluster shrinks/scrolls on its own; the right-hand utilities and
+   the right-panel button must always stay on screen. */
+html.dsh-m .dsh-m-header [class*="_titleRow"] {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 36px;
+  padding-inline-start: 0 !important;
+  overflow: hidden;
+}
+html.dsh-m .dsh-m-header [class*="_titleCluster"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+html.dsh-m .dsh-m-header [class*="_titleCluster"]::-webkit-scrollbar {
+  display: none;
+}
+html.dsh-m .dsh-m-header [class*="_headerUtilities"],
+html.dsh-m .dsh-m-header [class*="_headerCorner"] {
+  flex: 0 0 auto;
+  position: static !important;
+  margin-right: 0 !important;
+}
+html.dsh-m .dsh-m-header [class*="_headerUtilities"] {
+  margin-left: auto;
+}
+html.dsh-m .dsh-m-header [class*="_headerCorner"] button {
+  width: 36px;
+  height: 36px;
+}
+html.dsh-m .dsh-m-header [class*="_tabs"] {
+  gap: 24px;
+  margin-top: 4px;
+  padding-left: 0;
+  margin-left: calc(-1 * var(--dsh-m-menu) - 2px);
+}
+/* "Open in Finder / editor" targets the desktop; meaningless on a phone. */
+html.dsh-m [data-open-target] {
+  display: none !important;
+}
+
+/* ---------- Chat flow ---------- */
+
+html.dsh-m [data-conversation-content] {
+  --dsh-chat-content-width: 100%;
+  --dsh-composer-card-max-width: 100%;
+  --dsh-composer-side-clearance: 8px;
+}
+html.dsh-m [data-conversation-scroll] {
+  margin-right: 0;
+  scrollbar-gutter: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+html.dsh-m [data-conversation-scroll] [class*="_scroll"]:has(> [data-chat-flow]) {
+  padding: 12px 14px;
+}
+html.dsh-m [data-chat-flow] pre,
+html.dsh-m [data-chat-flow] table {
+  max-width: 100%;
+  overflow-x: auto;
+}
+html.dsh-m [data-chat-flow] img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ---------- Composer ---------- */
+
+html.dsh-m [data-composer-seat] {
+  padding-bottom: 4px;
+}
+html.dsh-m [data-composer-card] {
+  border-radius: 18px;
+}
+/* 16px stops mobile browsers from zooming into the field on focus. */
+html.dsh-m [data-composer-input] {
+  font-size: 16px;
+}
+html.dsh-m [data-composer-card] [class*="_row"] {
+  gap: 6px;
+  padding: 2px 4px 4px;
+}
+
+/* ---------- Touch ergonomics ---------- */
+
+/* Desktop tooltips pop on tap and cover the controls. */
+html.dsh-m [role="tooltip"][class*="_bubble"] {
+  display: none !important;
+}
+html.dsh-m .dsh-m-side [role="treeitem"] {
+  min-height: 40px;
+}
+html.dsh-m [role="menu"],
+html.dsh-m [role="listbox"],
+html.dsh-m [role="dialog"] {
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - var(--dsh-m-top) - var(--dsh-m-bottom) - 16px);
+}
+html.dsh-m [role="dialog"] {
+  overflow: auto;
+}
+html.dsh-m [role="menuitem"],
+html.dsh-m [role="option"] {
+  min-height: 40px;
+}
+
+/* ---------- Toast used for "press back again" ---------- */
+
+.dsh-m-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+  z-index: 2000;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(30, 32, 38, 0.92);
+  color: #fff;
+  font: 14px/20px -apple-system, system-ui, sans-serif;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s;
+}
+.dsh-m-toast[data-show] {
+  opacity: 1;
+}

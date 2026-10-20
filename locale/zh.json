@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "FRP 端口映射",
+    "description": "启动 frpc，通过你自己的 frps 云服务器把当前 Web 界面映射到公网。带登录令牌的访问链接写入 ~/.dsh/frp-tunnel/access-url.txt。"
+  }
+}
