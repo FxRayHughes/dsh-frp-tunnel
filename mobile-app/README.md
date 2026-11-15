@@ -17,6 +17,8 @@
 3. 访问端口能连通电脑端的入口页后，WebView 从 `http://127.0.0.1:<端口>/__frp/login` 登录进入 DSH。连接页会提示当前是「P2P 直连」还是「服务器中转」。
 4. 电脑端没开 P2P（插件旧版本、关了「手机 App P2P 直连」或没设入口密码）或 frps 连不上时，直接用公网地址，跟以前一样。
 
+打洞前 App 会按 frp 的方式探测 `stun.miwifi.com`、`stun.easyvoip.com`、`stun.nextcloud.com:443`，把第一个完整响应的 IP:端口交给 frp（frp 默认的 easyvoip 有一半地址已失效，会让打洞约一半失败）。
+
 只对回环地址放开明文 HTTP（`res/xml/network_security_config.xml`），其余地址仍只允许 HTTPS。访问端口只监听手机本机回环，经 frp 的流量用访问密钥加密。
 
 电脑端要求：dsh-frp-tunnel 的「手机 App P2P 直连」开启（默认开）且设置了入口密码，它会额外登记 `<proxyName>-p2p`（xtcp）和 `<proxyName>-p2p-s`（stcp）两个代理。双方都是对称型 NAT 时打不通，会一直走中转。

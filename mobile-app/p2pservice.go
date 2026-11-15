@@ -159,6 +159,10 @@ func (s *P2PService) start(info *P2PInfo) (int, error) {
 		LoginFailExit: &loginFailExit,
 	}
 	common.Transport.TLS.Enable = &info.TLS
+	// A STUN server that answered just now; see stun.go.
+	if stunServer := pickStunServer(); stunServer != "" {
+		common.NatHoleSTUNServer = stunServer
+	}
 	if info.Token != "" {
 		common.Auth.Method = v1.AuthMethodToken
 		common.Auth.Token = info.Token
