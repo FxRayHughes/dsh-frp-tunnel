@@ -13,7 +13,7 @@
         <div class="logo" aria-hidden="true">D</div>
         <div>
             <h1>DSH Remote</h1>
-            <p class="muted">通过 FRP 隧道连接电脑上的 DeepSeek Harness</p>
+            <p class="muted">P2P 直连电脑上的 DeepSeek Harness，不通时经 FRP 隧道</p>
         </div>
     </header>
 
@@ -43,6 +43,10 @@
         <label class="check">
             <input id="auto" type="checkbox"/>
             <span>启动时自动连接</span>
+        </label>
+        <label class="check">
+            <input id="p2p" type="checkbox"/>
+            <span>优先 P2P 直连（不通时经服务器中转，再不行走公网地址）</span>
         </label>
 
         <p id="status" class="status" role="status" aria-live="polite"></p>

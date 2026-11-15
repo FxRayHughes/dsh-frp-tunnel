@@ -25,6 +25,7 @@ const FAIL_WINDOW_MS = 10 * 60 * 1000;
 const FAIL_LIMIT = 8;
 
 const MOBILE_PREFIX = '/__frp/mobile.';
+const P2P_PATH = '/__frp/p2p';
 /** Largest DSH HTML document the relay will buffer to inject the phone layer. */
 const INJECT_LIMIT = 4 * 1024 * 1024;
 
@@ -178,7 +179,10 @@ p{margin:0;color:#ff7b7b;font-size:14px;min-height:18px}
 
 /** Rewrite request headers so the upstream sees a loopback request. */
 function rewriteHeaders(headers, upstreamHost, upstreamOrigin) {
-  const out = { ...headers };
+  // Every relayed browser is somewhere else; plugins such as dsh-peer-link
+  // then offer downloads and an in-page folder browser instead of launching
+  // apps on this desktop. The relay always overwrites a client-sent value.
+  const out = { ...headers, 'x-dsh-remote-viewer': 'frp' };
   out.host = upstreamHost;
   if (out.origin) out.origin = upstreamOrigin;
   if (out.referer) {
@@ -216,9 +220,11 @@ function rewriteHeaders(headers, upstreamHost, upstreamOrigin) {
  *   clients never need the per-launch token.
  * @param {boolean} [options.mobile] - inject the phone layout + history layer
  *   (mobile/mobile.css, mobile/mobile.js) into DSH pages served through the tunnel.
+ * @param {() => object | undefined} [options.p2p] - the phone app's P2P
+ *   settings, served at `/__frp/p2p` to logged-in clients only.
  * @returns {Promise<{ port: number, close: () => Promise<void> }>}
  */
-export async function startRelay({ upstreamOrigin, username = 'dsh', password = '', warn, loginTarget, mobile = false }) {
+export async function startRelay({ upstreamOrigin, username = 'dsh', password = '', warn, loginTarget, mobile = false, p2p }) {
   let assets;
   if (mobile) {
     try {
@@ -348,6 +354,13 @@ export async function startRelay({ upstreamOrigin, username = 'dsh', password = 
       }
       res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="DSH", charset="UTF-8"' });
       res.end('Unauthorized');
+      return;
+    }
+    if (path === P2P_PATH) {
+      // Behind the gate: it holds the frps token, which the app's visitor needs to log in.
+      const info = gate === undefined || req.method !== 'GET' ? undefined : p2p?.();
+      res.writeHead(info ? 200 : 404, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(info ? { ok: true, ...info } : { ok: false }));
       return;
     }
     // Past the gate, a page load DSH refuses (no cookie yet, or one from an older

@@ -46,6 +46,8 @@ window.__ModuleLoader__.load({
       frpcPath: 'frpc binary',
       mobileLayout: 'Phone layout',
       mobileLayoutHint: 'Inject a phone layout and back/forward support into pages served through the tunnel.',
+      p2p: 'Phone app P2P',
+      p2pHint: 'The Android app tries a direct P2P connection (xtcp hole punching) first and falls back to frps. Needs the gate password.',
       on: 'Running',
       off: 'Stopped',
     };
@@ -90,6 +92,8 @@ window.__ModuleLoader__.load({
       frpcPath: 'frpc 可执行文件',
       mobileLayout: '手机端适配',
       mobileLayoutHint: '经隧道访问时注入手机布局与前进后退；电脑浏览器不受影响。',
+      p2p: '手机 App P2P 直连',
+      p2pHint: '安卓 App 先尝试 P2P 直连（xtcp 打洞），打不通再经 frps 中转。需要设置入口密码。',
       on: '运行中',
       off: '已停止',
     };
@@ -121,6 +125,7 @@ window.__ModuleLoader__.load({
           { key: 'tunnelUser', kind: 'text', hint: 'tunnelUserHint' },
           { key: 'tunnelPassword', kind: 'password', hint: 'tunnelPasswordHint' },
           { key: 'mobileLayout', kind: 'switch', hint: 'mobileLayoutHint' },
+          { key: 'p2p', kind: 'switch', hint: 'p2pHint' },
         ],
       },
       {

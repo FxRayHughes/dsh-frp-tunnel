@@ -16,9 +16,10 @@ var assets embed.FS
 func main() {
 	app := application.New(application.Options{
 		Name:        "DSH Remote",
-		Description: "Connect to DeepSeek Harness through the FRP tunnel",
+		Description: "Connect to DeepSeek Harness through the FRP tunnel, P2P first",
 		Services: []application.Service{
 			application.NewService(&ProfileService{}),
+			application.NewService(&P2PService{}),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

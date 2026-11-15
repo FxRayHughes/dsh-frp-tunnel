@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-frp-tunnel",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Expose the DSH Web GUI through a self-hosted frps server via frpc.",
   "type": "module",

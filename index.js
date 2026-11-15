@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import z from '@deepseek-ai/schemastery';
 import { startRelay } from './relay.js';
-import { buildFrpcToml, publicBaseUrl, scrub } from './frpc.js';
+import { buildFrpcToml, p2pProxies, publicBaseUrl, scrub } from './frpc.js';
 
 /**
  * FRP tunnel Host plugin.
@@ -44,6 +44,7 @@ export const Config = z.object({
   tunnelUser: z.string().default('dsh').description('隧道入口的 HTTP Basic 用户名').volatile(),
   tunnelPassword: z.string().role('secret').default('').description('隧道入口的 HTTP Basic 密码；留空则不启用').volatile(),
   mobileLayout: z.boolean().default(true).description('经隧道访问时为手机注入移动端布局与前进后退').volatile(),
+  p2p: z.boolean().default(true).description('允许安卓 App 先尝试 P2P 直连（xtcp 打洞），不通再经 frps 中转；需要设置入口密码').volatile(),
 });
 
 const KEYS = Object.keys(Config.dict);
@@ -169,6 +170,20 @@ class Tunnel {
       warn: this.warn,
       loginTarget,
       mobile: config.mobileLayout !== false,
+      p2p: () => {
+        const proxies = p2pProxies(config);
+        if (proxies === undefined) return undefined;
+        return {
+          serverAddr: config.serverAddr,
+          serverPort: config.serverPort,
+          tls: config.tls,
+          user: config.user,
+          token: config.authToken,
+          proxy: proxies.xtcp,
+          fallbackProxy: proxies.stcp,
+          secretKey: proxies.secretKey,
+        };
+      },
     });
     if (this.disposed) {
       await relay.close();
@@ -195,6 +210,7 @@ class Tunnel {
       await writeFile(join(STATE_DIR, 'login-url.txt'), `${new URL('/__frp/login', announced).href}\n`, { mode: 0o600 });
     }
     this.log(`[frp-tunnel] 公网入口 ${announced}`);
+    if (p2pProxies(config)) this.log(`[frp-tunnel] 安卓 App P2P 入口 ${p2pProxies(config).xtcp}（xtcp，失败时 stcp 中转）`);
     this.log(`[frp-tunnel] 固定登录入口 ${new URL('/__frp/login', announced).href}（账号密码登录，不需要令牌）`);
     this.log(`[frp-tunnel] 带令牌链接已写入 ${accessPath}`);
   }

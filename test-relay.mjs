@@ -348,5 +348,40 @@ const get = (port, path, headers = {}) =>
   console.log('ok: phone layer injection');
 }
 
+// --- phone P2P: proxies in the frpc config, settings only behind the gate ---
+{
+  const { p2pProxies } = await import('./frpc.js');
+  const base = { serverAddr: 'f.example', serverPort: 7000, tls: true, proxyType: 'tcp', remotePort: 6080, proxyName: 'dsh-web', tunnelPassword: 'pw' };
+  const toml = buildFrpcToml(base, 4321);
+  assert.match(toml, /name = "dsh-web-p2p"\ntype = "xtcp"/);
+  assert.match(toml, /name = "dsh-web-p2p-s"\ntype = "stcp"/);
+  assert.equal((toml.match(/localPort = 4321/g) ?? []).length, 3);
+  assert.equal(p2pProxies({ ...base, tunnelPassword: '' }), undefined, 'no P2P without a gate password');
+  assert.equal(p2pProxies({ ...base, p2p: false }), undefined);
+  assert.doesNotMatch(buildFrpcToml({ ...base, p2p: false }, 1), /xtcp/);
+  assert.notEqual(p2pProxies(base).secretKey, p2pProxies({ ...base, tunnelPassword: 'other' }).secretKey);
+
+  const info = { serverAddr: 'f.example', token: 'tok', proxy: 'dsh-web-p2p', secretKey: 'k' };
+  const relay = await startRelay({ upstreamOrigin, username: 'dsh', password: 'secret', warn: () => {}, p2p: () => info });
+  const ask = (headers) =>
+    new Promise((resolve) => http.get(`http://127.0.0.1:${relay.port}/__frp/p2p`, { headers }, (res) => {
+      let body = '';
+      res.on('data', (c) => (body += c));
+      res.on('end', () => resolve({ status: res.statusCode, body }));
+    }));
+  const anon = await ask({});
+  assert.equal(anon.status, 401, 'P2P settings need the login');
+  assert.doesNotMatch(anon.body, /tok/);
+  const authed = await ask({ authorization: 'Basic ' + Buffer.from('dsh:secret').toString('base64') });
+  assert.equal(authed.status, 200);
+  assert.deepEqual(JSON.parse(authed.body), { ok: true, ...info });
+  await relay.close();
+  const none = await startRelay({ upstreamOrigin, username: 'dsh', password: 'secret', warn: () => {} });
+  const missing = await new Promise((resolve) => http.get(`http://127.0.0.1:${none.port}/__frp/p2p`, { headers: { authorization: 'Basic ' + Buffer.from('dsh:secret').toString('base64') } }, (res) => { res.resume(); resolve(res.statusCode); }));
+  assert.equal(missing, 404);
+  await none.close();
+  console.log('ok: phone P2P settings');
+}
+
 upstream.close();
 console.log('\nALL RELAY TESTS PASSED');

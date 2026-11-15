@@ -2,6 +2,7 @@ package com.wails.app;
 
 import android.annotation.SuppressLint;
 import android.content.BroadcastReceiver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -14,6 +15,7 @@ import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.PowerManager;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
@@ -24,6 +26,9 @@ import android.util.Base64;
 import android.util.Log;
 import android.webkit.ConsoleMessage;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.MimeTypeMap;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebChromeClient.FileChooserParams;
@@ -32,6 +37,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -45,6 +51,8 @@ import java.io.FileOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -280,6 +288,10 @@ public class MainActivity extends AppCompatActivity {
                 CookieManager.getInstance().flush();
                 if (DEBUG) Log.d(TAG, "Page loaded: " + url);
                 bridge.onPageFinished(url);
+                Uri page = Uri.parse(url);
+                if (page.getHost() != null && !WAILS_HOST.equals(page.getHost())) {
+                    view.evaluateJavascript(BLOB_DOWNLOAD_SHIM, null);
+                }
                 syncBarsWithPage(view);
                 // Now that JS listeners are mounted, push a snapshot of the
                 // current battery / network / theme so the UI starts populated.
@@ -289,6 +301,24 @@ public class MainActivity extends AppCompatActivity {
 
         // Add JavaScript interface for Go communication
         webView.addJavascriptInterface(new WailsJSBridge(bridge, webView), "wails");
+
+        // Downloads started by the remote DSH page: blob: object URLs are read
+        // in-page and streamed to the DshDownloads bridge; http(s) URLs (e.g.
+        // /peer-link/zip) are fetched natively with the page's cookies.
+        webView.addJavascriptInterface(new DownloadBridge(), "DshDownloads");
+        webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            if (url == null) return;
+            if (url.startsWith("blob:")) {
+                String name = contentDisposition != null && !contentDisposition.isEmpty()
+                        ? URLUtil.guessFileName(url, contentDisposition, mimetype) : "";
+                webView.evaluateJavascript(BLOB_DOWNLOAD_SHIM + ";window.__DSH_SAVE_BLOB__&&window.__DSH_SAVE_BLOB__("
+                        + JSONObject.quote(url) + "," + JSONObject.quote(name) + ")", null);
+            } else if (url.startsWith("http://") || url.startsWith("https://")) {
+                downloadHttp(url, userAgent, contentDisposition, mimetype);
+            } else {
+                showToast("下载失败：不支持的链接");
+            }
+        });
 
         // A WebChromeClient is required for HTML <input type="file"> elements to
         // work; without onShowFileChooser the WebView silently ignores clicks on
@@ -704,6 +734,258 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG, "Failed to copy picked document", e);
             return null;
         }
+    }
+
+    // ---- Downloads -------------------------------------------------------
+
+    private static final long MAX_BLOB_DOWNLOAD = 200L * 1024 * 1024;
+    private static final String DOWNLOAD_SUBDIR = "DSH Remote";
+
+    /**
+     * Injected into remote pages (idempotent). Exposes __DSH_SAVE_BLOB__(url, name)
+     * which reads a blob: URL as base64 in chunks and streams it to the
+     * DshDownloads bridge, and routes <a download href="blob:..."> clicks
+     * (including detached anchors clicked from script) through it, since such
+     * clicks don't reach the DownloadListener in every WebView version.
+     */
+    private static final String BLOB_DOWNLOAD_SHIM = "(function(){"
+            + "if(window.__DSH_DL_SHIM__||location.hostname==='" + WAILS_HOST + "')return;"
+            + "var B=window.DshDownloads;if(!B)return;window.__DSH_DL_SHIM__=1;"
+            + "var MAX=" + MAX_BLOB_DOWNLOAD + ",CH=3*1024*1024;"
+            + "function save(url,name){var id=null;"
+            + "fetch(url).then(function(r){return r.blob();}).then(function(b){"
+            + "if(b.size>MAX){B.fail('文件超过 200 MB，无法在应用内保存');return;}"
+            + "id=B.begin(name||'',b.type||'');if(!id)return;var off=0;"
+            + "(function next(){if(off>=b.size){B.finish(id);return;}"
+            + "var fr=new FileReader();fr.onload=function(){var s=String(fr.result);"
+            + "if(!B.chunk(id,s.substring(s.indexOf(',')+1)))return;off+=CH;next();};"
+            + "fr.onerror=function(){B.abort(id,'读取文件失败');};"
+            + "fr.readAsDataURL(b.slice(off,off+CH));})();"
+            + "}).catch(function(e){if(id)B.abort(id,String(e&&e.message||e));"
+            + "else B.fail('无法读取文件（'+String(e&&e.message||e)+'）');});}"
+            + "window.__DSH_SAVE_BLOB__=save;"
+            + "function take(a){var h=a&&a.href||'';if(!a.hasAttribute('download')||h.indexOf('blob:')!==0)return false;"
+            + "save(h,a.getAttribute('download'));return true;}"
+            + "document.addEventListener('click',function(e){var a=e.target&&e.target.closest&&e.target.closest('a[download]');"
+            + "if(a&&take(a)){e.preventDefault();e.stopImmediatePropagation();}},true);"
+            + "var oc=HTMLAnchorElement.prototype.click;"
+            + "HTMLAnchorElement.prototype.click=function(){if(!this.isConnected&&take(this))return;return oc.apply(this,arguments);};"
+            + "})()";
+
+    /** JS bridge ("DshDownloads") receiving blob downloads as base64 chunks. */
+    private final class DownloadBridge {
+        private final java.util.Map<String, DownloadSink> sinks = new java.util.HashMap<>();
+        private int nextId = 1;
+
+        @JavascriptInterface
+        public synchronized String begin(String name, String mime) {
+            try {
+                DownloadSink sink = openDownload(name, mime);
+                String id = String.valueOf(nextId++);
+                sinks.put(id, sink);
+                return id;
+            } catch (Exception e) {
+                Log.e(TAG, "blob download open failed", e);
+                showToast("下载失败：" + e.getMessage());
+                return null;
+            }
+        }
+
+        @JavascriptInterface
+        public synchronized boolean chunk(String id, String base64) {
+            DownloadSink sink = sinks.get(id);
+            if (sink == null) return false;
+            try {
+                byte[] data = Base64.decode(base64, Base64.DEFAULT);
+                if (sink.bytes + data.length > MAX_BLOB_DOWNLOAD) {
+                    throw new java.io.IOException("文件超过 200 MB，无法在应用内保存");
+                }
+                sink.out.write(data);
+                sink.bytes += data.length;
+                return true;
+            } catch (Exception e) {
+                sinks.remove(id);
+                sink.discard();
+                Log.e(TAG, "blob download write failed", e);
+                showToast("下载失败：" + e.getMessage());
+                return false;
+            }
+        }
+
+        @JavascriptInterface
+        public synchronized void finish(String id) {
+            DownloadSink sink = sinks.remove(id);
+            if (sink == null) return;
+            try {
+                showToast("已保存到 " + sink.commit());
+            } catch (Exception e) {
+                sink.discard();
+                Log.e(TAG, "blob download commit failed", e);
+                showToast("下载失败：" + e.getMessage());
+            }
+        }
+
+        @JavascriptInterface
+        public synchronized void abort(String id, String reason) {
+            DownloadSink sink = sinks.remove(id);
+            if (sink != null) sink.discard();
+            fail(reason);
+        }
+
+        @JavascriptInterface
+        public void fail(String reason) {
+            showToast("下载失败：" + reason);
+        }
+    }
+
+    /** Fetch an http(s) download natively, carrying the page's cookies. */
+    private void downloadHttp(String url, String userAgent, String contentDisposition, String mimetype) {
+        final String ua = userAgent != null ? userAgent : webView.getSettings().getUserAgentString();
+        showToast("开始下载…");
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            DownloadSink sink = null;
+            try {
+                conn = (HttpURLConnection) new URL(url).openConnection();
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+                conn.setRequestProperty("User-Agent", ua);
+                String cookie = CookieManager.getInstance().getCookie(url);
+                if (cookie != null && !cookie.isEmpty()) conn.setRequestProperty("Cookie", cookie);
+                int code = conn.getResponseCode();
+                if (code < 200 || code >= 300) throw new java.io.IOException("HTTP " + code);
+                String cd = conn.getHeaderField("Content-Disposition");
+                if (cd == null || cd.isEmpty()) cd = contentDisposition;
+                String mime = conn.getContentType();
+                if (mime == null || mime.isEmpty()) mime = mimetype;
+                if (mime != null && mime.contains(";")) mime = mime.substring(0, mime.indexOf(';')).trim();
+                String name = contentDispositionFileName(cd);
+                if (name == null) name = URLUtil.guessFileName(url, cd, mime);
+                sink = openDownload(name, mime);
+                try (InputStream in = conn.getInputStream()) {
+                    byte[] buf = new byte[64 * 1024];
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        sink.out.write(buf, 0, n);
+                    }
+                }
+                showToast("已保存到 " + sink.commit());
+            } catch (Exception e) {
+                if (sink != null) sink.discard();
+                Log.e(TAG, "http download failed", e);
+                showToast("下载失败：" + e.getMessage());
+            } finally {
+                if (conn != null) conn.disconnect();
+            }
+        }).start();
+    }
+
+    /** RFC 6266 filename*=UTF-8''... (URLUtil.guessFileName ignores it). */
+    @Nullable
+    private static String contentDispositionFileName(@Nullable String cd) {
+        if (cd == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("filename\\*\\s*=\\s*([\\w-]+)''([^;]+)", java.util.regex.Pattern.CASE_INSENSITIVE)
+                .matcher(cd);
+        if (!m.find()) return null;
+        try {
+            return java.net.URLDecoder.decode(m.group(2).trim().replace("+", "%2B"), m.group(1));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** An in-progress file in Downloads: MediaStore item (API 29+) or app-specific file. */
+    private final class DownloadSink {
+        final OutputStream out;
+        final Uri uri;
+        final File file;
+        long bytes;
+
+        DownloadSink(OutputStream out, @Nullable Uri uri, @Nullable File file) {
+            this.out = out;
+            this.uri = uri;
+            this.file = file;
+        }
+
+        /** Publish the file; returns the user-facing location for the toast. */
+        String commit() throws java.io.IOException {
+            out.close();
+            if (uri != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                ContentValues done = new ContentValues();
+                done.put(MediaStore.Downloads.IS_PENDING, 0);
+                getContentResolver().update(uri, done, null, null);
+                String name = null;
+                try (Cursor c = getContentResolver().query(uri,
+                        new String[]{MediaStore.Downloads.DISPLAY_NAME}, null, null, null)) {
+                    if (c != null && c.moveToFirst()) name = c.getString(0);
+                }
+                return "下载/" + DOWNLOAD_SUBDIR + "/" + name;
+            }
+            return file.getAbsolutePath();
+        }
+
+        void discard() {
+            try {
+                out.close();
+            } catch (Exception ignored) {
+            }
+            try {
+                if (uri != null) getContentResolver().delete(uri, null, null);
+                if (file != null) file.delete();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private DownloadSink openDownload(@Nullable String rawName, @Nullable String mime) throws java.io.IOException {
+        String name = rawName == null ? "" : new File(rawName.replace('\\', '/')).getName()
+                .replaceAll("[\\x00-\\x1f:*?\"<>|]", "_").trim();
+        if (name.isEmpty() || name.startsWith(".")) name = "download" + name;
+        String ext = MimeTypeMap.getFileExtensionFromUrl(Uri.encode(name));
+        if (name.lastIndexOf('.') <= 0) {
+            String guessed = mime != null ? MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) : null;
+            if (guessed != null) {
+                name = name + "." + guessed;
+                ext = guessed;
+            }
+        }
+        // Prefer the type implied by the extension so MediaStore keeps the name as-is.
+        String type = ext != null ? MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext.toLowerCase()) : null;
+        if (type == null) type = mime != null && !mime.isEmpty() ? mime : "application/octet-stream";
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            ContentValues values = new ContentValues();
+            values.put(MediaStore.Downloads.DISPLAY_NAME, name);
+            values.put(MediaStore.Downloads.MIME_TYPE, type);
+            values.put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + DOWNLOAD_SUBDIR);
+            values.put(MediaStore.Downloads.IS_PENDING, 1);
+            Uri uri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+            if (uri == null) throw new java.io.IOException("无法创建文件");
+            OutputStream out = getContentResolver().openOutputStream(uri);
+            if (out == null) {
+                getContentResolver().delete(uri, null, null);
+                throw new java.io.IOException("无法写入文件");
+            }
+            return new DownloadSink(out, uri, null);
+        }
+
+        // API < 29: app-specific Downloads dir, no storage permission needed.
+        File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+        if (dir == null) throw new java.io.IOException("存储不可用");
+        if (!dir.exists()) dir.mkdirs();
+        int dot = name.lastIndexOf('.');
+        String base = dot > 0 ? name.substring(0, dot) : name;
+        String suffix = dot > 0 ? name.substring(dot) : "";
+        File file = new File(dir, name);
+        for (int i = 1; file.exists(); i++) {
+            file = new File(dir, base + " (" + i + ")" + suffix);
+        }
+        return new DownloadSink(new FileOutputStream(file), null, file);
+    }
+
+    private void showToast(String message) {
+        runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
     }
 
     /**

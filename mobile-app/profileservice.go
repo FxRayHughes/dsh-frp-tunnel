@@ -27,6 +27,8 @@ type Profile struct {
 	Password string `json:"password"`
 	// AutoConnect skips the settings screen on launch when the profile is complete.
 	AutoConnect bool `json:"autoConnect"`
+	// NoP2P skips the direct connection and always uses the public URL.
+	NoP2P bool `json:"noP2P"`
 }
 
 // TestResult reports a dry-run login against the relay.

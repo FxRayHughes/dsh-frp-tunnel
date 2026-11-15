@@ -1,8 +1,23 @@
+import { createHmac } from 'node:crypto';
+
 /**
  * Build an frpc (>= 0.52, TOML) config. JSON string literals are valid TOML
  * basic strings, so every user value goes through `JSON.stringify`.
  */
 const q = (value) => JSON.stringify(String(value));
+
+/**
+ * The phone app's direct route: an xtcp proxy (P2P hole punching) and an
+ * stcp proxy frps relays when no hole opens, both in front of the relay.
+ * Only clients that know the key can visit them; the app gets it from
+ * `/__frp/p2p` after logging in. Undefined without an entry password.
+ */
+export function p2pProxies(config) {
+  if (config.p2p === false || !config.tunnelPassword) return undefined;
+  const name = `${config.proxyName}-p2p`;
+  const secretKey = createHmac('sha256', config.tunnelPassword).update(`frp-p2p:${name}`).digest('base64url').slice(0, 32);
+  return { xtcp: name, stcp: `${name}-s`, secretKey };
+}
 
 /**
  * @param {object} config - resolved plugin config
@@ -41,6 +56,13 @@ export function buildFrpcToml(config, localPort) {
   } else {
     if (config.customDomain) lines.push(`customDomains = [${q(config.customDomain)}]`);
     if (config.subdomain) lines.push(`subdomain = ${q(config.subdomain)}`);
+  }
+  const p2p = p2pProxies(config);
+  if (p2p !== undefined) {
+    for (const [type, name] of [['xtcp', p2p.xtcp], ['stcp', p2p.stcp]]) {
+      lines.push('', '[[proxies]]', `name = ${q(name)}`, `type = "${type}"`, `secretKey = ${q(p2p.secretKey)}`);
+      lines.push('localIP = "127.0.0.1"', `localPort = ${localPort}`, 'transport.useEncryption = true');
+    }
   }
   return lines.join('\n') + '\n';
 }

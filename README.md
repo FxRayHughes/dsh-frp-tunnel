@@ -39,8 +39,24 @@ DSH 的端口是 `--port 0` 由系统分配的，每次启动都变；frpc 的 T
 | `publicUrl` | `''` | 覆盖对外访问地址，留空自动推导 |
 | `frpcPath` | `/opt/homebrew/bin/frpc` | `brew install frpc` 装出来的位置 |
 | `tunnelUser` / `tunnelPassword` | `dsh` / `''` | 入口的 HTTP Basic；`tunnelPassword` 留空则不启用该层 |
+| `p2p` | `true` | 安卓 App 先 P2P 直连（见下文）。需要设置了 `tunnelPassword` |
 
 界面里的「入口密码」建议设成与 frps 后台密码不同的强随机串——它挡在公网第一层。
+
+## 远程查看标记
+
+中继给每个转发的请求加上 `x-dsh-remote-viewer: frp`（覆盖客户端自带的同名头）。DSH 本身不看这个头；dsh-peer-link 0.6.0 起据此把「选择工作区目录」改成网页内浏览，并在右键菜单里提供「下载到这台设备」「下载文件夹（zip）」等，避免在电脑上弹出没人看到的窗口。
+
+## 安卓 App 的 P2P 直连
+
+开着 `p2p` 且设置了入口密码时，frpc 额外登记两个代理，都指向同一个中继：
+
+- `<proxyName>-p2p`（xtcp）：手机与电脑 UDP 打洞直连，不经服务器转发流量。
+- `<proxyName>-p2p-s`（stcp）：打洞不成时由 frps 中转。
+
+两者共用一个访问密钥（由入口密码派生，改密码即换）。App 登录后从 `GET /__frp/p2p` 取得 frps 地址、token、代理名和访问密钥；这个接口在入口密码之后，未登录返回 401，关闭 `p2p` 时返回 404。App 在手机回环地址上开 xtcp 访问端口（失败转 stcp），WebView 经它访问；都不通时才用公网地址。
+
+frps 默认支持 xtcp/stcp，不用开新端口。注意 `/__frp/p2p` 会把 frps 的 token 交给登录成功的 App。
 
 ## 产物
 
